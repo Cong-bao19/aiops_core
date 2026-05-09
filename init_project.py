@@ -31,4 +31,4 @@ for file in root_files:
         with open(file, "w", encoding="utf-8") as f:
             pass
 
-print("✅ Đã tạo xong cấu trúc thư mục FastAPI chuẩn Doanh Nghiệp!")
+print("Đã tạo xong cấu trúc thư mục FastAPI ")
