@@ -4,16 +4,25 @@ from datetime import datetime
 
 
 class LogIngestRequest(BaseModel):
-    trace_id: str = Field(..., description="Mã định danh luồng (Trace ID)")
     service_name: str = Field(..., description="Tên microservice (VD: frontend)")
     raw_text: str = Field(..., min_length=5, description="Nội dung chuỗi log thô")
-
+    timestamp: Optional[str] = Field(
+        default=None,
+        description="Timestamp gốc từ client agent"
+    )
 class IngestResponse(BaseModel):
     status: str
     message: str
     is_anomaly: bool
     incident_id: Optional[int] = None
 
+class ErrorTypeDTO(BaseModel):
+    id: int
+    code: int
+    name: str
+    description: Optional[str] = None
+    
+    model_config = ConfigDict(from_attributes=True)
 
 class IncidentDTOResponse(BaseModel):
     id: int
@@ -25,7 +34,9 @@ class IncidentDTOResponse(BaseModel):
     last_seen: datetime
     
     
-    model_config = ConfigDict(from_attributes=True) 
+    error_type: Optional[ErrorTypeDTO] = None
+    
+    model_config = ConfigDict(from_attributes=True)
 
 class AIPredictionDetailDTO(BaseModel):
     trace_id: str
@@ -34,7 +45,7 @@ class AIPredictionDetailDTO(BaseModel):
     probabilities: Optional[Dict[str, float]] = None
     raw_log_context: str  
     created_at: datetime
-    
+    error_type: Optional[ErrorTypeDTO] = None
     model_config = ConfigDict(from_attributes=True)
 
 class IncidentDetailResponse(IncidentDTOResponse):

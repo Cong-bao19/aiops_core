@@ -16,6 +16,17 @@ class IncidentStatusEnum(str, enum.Enum):
     ACKNOWLEDGED = "ACKNOWLEDGED" # đã tiếp nhận
     RESOLVED = "RESOLVED"         # xong
 
+class ErrorType(Base):
+    __tablename__ = "error_types"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(Integer, unique=True, index=True, nullable=False) # VD: 1, 2, 3
+    name = Column(String(100), nullable=False)                      # VD: Normal, Performance...
+    description = Column(String(255), nullable=True)                # Gợi ý cách fix
+
+    incidents = relationship("Incident", back_populates="error_type")
+    predictions = relationship("AIPrediction", back_populates="error_type")
+
 
 class Service(Base):
     __tablename__ = "services"
@@ -34,18 +45,19 @@ class Incident(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     service_id = Column(Integer, ForeignKey("services.id"), nullable=False)
     
+    error_type_id = Column(Integer, ForeignKey("error_types.id"), nullable=False)
     title = Column(String(255), nullable=False)
-    diagnosis_code = Column(Integer, nullable=False) 
     
     severity = Column(Enum(SeverityEnum), default=SeverityEnum.CRITICAL)
     status = Column(Enum(IncidentStatusEnum), default=IncidentStatusEnum.OPEN)
     
     occurrence_count = Column(Integer, default=1)
-    
+    recent_trace_ids = Column(String, nullable=True)
     first_seen = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     service = relationship("Service", back_populates="incidents")
+    error_type = relationship("ErrorType", back_populates="incidents")
     predictions = relationship("AIPrediction", back_populates="incident")
 
 
@@ -58,8 +70,7 @@ class AIPrediction(Base):
     service_id = Column(Integer, ForeignKey("services.id"), nullable=True)
     incident_id = Column(Integer, ForeignKey("incidents.id"), nullable=True) 
     
-    diagnosis_code = Column(Integer, nullable=False)
-    diagnosis_name = Column(String(50), nullable=False)
+    error_type_id = Column(Integer, ForeignKey("error_types.id"), nullable=False)
     confidence = Column(Float, nullable=False)
     
     probabilities = Column(JSONB, nullable=True)
@@ -71,3 +82,4 @@ class AIPrediction(Base):
 
     service = relationship("Service", back_populates="predictions")
     incident = relationship("Incident", back_populates="predictions")
+    error_type = relationship("ErrorType", back_populates="predictions")
