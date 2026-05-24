@@ -10,7 +10,6 @@ from datetime import datetime
 
 router = APIRouter(prefix="/api/v1/logs", tags=["Incident Dashboard"])
 
-# Schema phụ vụ cập nhật trạng thái sự cố
 class StatusUpdateRequest(BaseModel):
     status: str
     resolution_note: Optional[str] = None
@@ -18,7 +17,7 @@ class StatusUpdateRequest(BaseModel):
 class BulkResolveRequest(BaseModel):
     incident_ids: List[int]
 
-# 1. API: LẤY TẤT CẢ INCIDENTS
+#  API: All INCIDENTS
 @router.get("/incidents", response_model=list[IncidentDTOResponse])
 async def get_all_incidents(status: str = None, db: Session = Depends(get_db)):
     query = db.query(Incident)
@@ -41,10 +40,19 @@ async def get_all_incidents(status: str = None, db: Session = Depends(get_db)):
         ))
     return result
 
-# 2. API: CHI TIẾT 1 INCIDENT
+#  API: detail 1 INCIDENT
 @router.get("/incidents/{incident_id}")
-async def get_incident_detail(incident_id: int, db: Session = Depends(get_db)):
-    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+async def get_all_incidents(
+    status: str = None, 
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db)
+):
+    query = db.query(Incident)
+    if status:
+        query = query.filter(Incident.status == IncidentStatusEnum(status))
+    
+    incident = query.order_by(Incident.last_seen.desc()).offset(skip).limit(limit).all()
     if not incident:
         raise HTTPException(status_code=404, detail="Không tìm thấy Incident này!")
         
@@ -66,12 +74,12 @@ async def get_incident_detail(incident_id: int, db: Session = Depends(get_db)):
         } if incident.error_type else None
     }
 
-# 3. API: CHI TIẾT LOG THEO TRACE ID
+#  API: detail LOG THEO TRACE ID
 @router.get("/traces/{trace_id}")
 async def get_trace_details(trace_id: str, db: Session = Depends(get_db)):
     trace_detail = db.query(AIPrediction).filter(AIPrediction.trace_id == trace_id).first()
     if not trace_detail:
-        raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu log chi tiết cho trace_id này!")
+        raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu log chi tiết cho trace_id")
     return {
         "id": trace_detail.id,
         "trace_id": trace_detail.trace_id,
@@ -86,12 +94,12 @@ async def get_trace_details(trace_id: str, db: Session = Depends(get_db)):
         } if trace_detail.error_type else None
     }
 
-# 4. API NHÓM 1: CẬP NHẬT TRẠNG THÁI SỰ CỐ
+#update status
 @router.put("/incidents/{incident_id}/status")
 async def update_incident_status(incident_id: int, payload: StatusUpdateRequest, db: Session = Depends(get_db)):
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
-        raise HTTPException(status_code=404, detail="Không tìm thấy sự cố này!")
+        raise HTTPException(status_code=404, detail="Không tìm thấy sự cố ")
     
     incident.status = payload.status
     incident.updated_at = datetime.now()
@@ -102,7 +110,7 @@ async def update_incident_status(incident_id: int, payload: StatusUpdateRequest,
     db.commit()
     return {"message": f"Sự cố #{incident_id} đã chuyển sang trạng thái {payload.status}"}
 
-# 5. API NHÓM 2: THỐNG KÊ SỐ LIỆU ĐO LƯỜNG METRICS SUMMARY
+#  SUMMARY
 @router.get("/metrics/summary")
 async def get_aiops_metrics_summary(db: Session = Depends(get_db)):
     total_incidents = db.query(Incident).count()
@@ -110,13 +118,17 @@ async def get_aiops_metrics_summary(db: Session = Depends(get_db)):
     investigating_incidents = db.query(Incident).filter(Incident.status == IncidentStatusEnum.ACKNOWLEDGED).count()
     
     resolved_incidents = db.query(Incident).filter(Incident.status == IncidentStatusEnum.RESOLVED).count()
-    error_stats = db.query(AIPrediction.error_type_id, func.count(AIPrediction.id)).group_by(AIPrediction.error_type_id).all()
+    error_stats = db.query(
+        AIPrediction.error_type_id,
+        ErrorType.name,
+        func.count(AIPrediction.id)
+    ).outerjoin(ErrorType, AIPrediction.error_type_id == ErrorType.id)\
+     .group_by(AIPrediction.error_type_id, ErrorType.name).all()
     
     distribution = {}
-    for type_id, count in error_stats:
+    for type_id, type_name, count in error_stats:
         if type_id is not None:
-            err_type = db.query(ErrorType).filter(ErrorType.id == type_id).first()
-            label = err_type.name if err_type else f"Mã nhãn {type_id}"
+            label = type_name if type_name else f"Mã nhãn {type_id}"
             distribution[label] = count
         else:
             distribution["Chưa phân loại"] = count

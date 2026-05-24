@@ -15,7 +15,7 @@ import time
 router = APIRouter(prefix="/api/v1/logs", tags=["Log Pipeline"])
 
 # ==========================================
-# 1. REGEX PRECOMPILE (Tối ưu CPU)
+# 1. REGEX PRECOMPILE 
 # ==========================================
 PATTERN_PREFIX = re.compile(
     r'^\d{2}:\d{2}:\d{2}\.\d{3}\s+'
@@ -44,9 +44,7 @@ PATTERN_SPAN = re.compile(
 
 PATTERN_DASH = re.compile(r'^-\s+')
 
-# ==========================================
-# 2. HTTP CLIENT (Singleton chống tràn Socket)
-# ==========================================
+
 http_client = httpx.AsyncClient(
     timeout=httpx.Timeout(
         connect=5.0,
@@ -59,11 +57,9 @@ http_client = httpx.AsyncClient(
 async def close_pipeline_resources():
     """Hàm gọi khi tắt Server để thu hồi tài nguyên HTTP an toàn"""
     await http_client.aclose()
-    print("🛑 [SHUTDOWN] Đã đóng các kết nối HTTP Client an toàn.")
+    print(" [SHUTDOWN] Đã đóng các kết nối HTTP Client an toàn")
 
-# ==========================================
-# 3. BUFFER + THREAD-SAFE LOCKS
-# ==========================================
+
 MAX_LOGS_PER_TRACE = 500
 
 trace_buffers = defaultdict(
@@ -76,8 +72,7 @@ trace_buffers = defaultdict(
 )
 
 trace_locks = {}
-_global_lock_manager = asyncio.Lock()  # Khóa tổng quản lý cấp phát khóa con
-
+_global_lock_manager = asyncio.Lock() 
 async def get_trace_lock(trace_id: str):
     """Cấp phát Lock an toàn tuyệt đối cho từng Trace"""
     async with _global_lock_manager:
@@ -85,14 +80,10 @@ async def get_trace_lock(trace_id: str):
             trace_locks[trace_id] = asyncio.Lock()
         return trace_locks[trace_id]
 
-# ==========================================
-# 4. MESSAGE QUEUE (Chống thắt cổ chai)
-# ==========================================
+
 ai_task_queue = asyncio.Queue(maxsize=5000)
 
-# ==========================================
-# 5. WORKER 1: CLEANUP TASK (Máy dọn rác RAM)
-# ==========================================
+
 async def cleanup_expired_buffers():
     while True:
         await asyncio.sleep(30)
@@ -114,7 +105,7 @@ async def cleanup_expired_buffers():
                     trace_locks.pop(tid, None)
 
 # ==========================================
-# 6. WORKER 2: AUTO FLUSH (Đẩy trace cũ lơ lửng)
+# AUTO FLUSH 
 # ==========================================
 async def auto_flush_buffers():
     while True:
@@ -142,7 +133,6 @@ async def auto_flush_buffers():
                     trace_buffers[tid]["logs"].clear()
                     trace_buffers[tid]["start_time"] = time.time()
 
-            # Đẩy Queue nằm ngoài Lock
             if should_put_queue:
                 try:
                     if ai_task_queue.full():
@@ -164,7 +154,7 @@ async def auto_flush_buffers():
                     print(f"💥 Queue full when auto flush {tid[:8]}")
 
 # ==========================================
-# 7. WORKER 3: AI CONSUMERS (Gọi Model AI Ngầm)
+# AI CONSUMERS 
 # ==========================================
 async def process_ai_queue_worker():
     while True:
@@ -175,13 +165,13 @@ async def process_ai_queue_worker():
             logs = batch_data["logs"]
             service_name = batch_data["service_name"]
 
-            print(f"⚙️ [WORKER] Processing {len(logs)} logs of Trace {trace_id[:8]}")
+            print(f" [WORKER] Processing {len(logs)} logs of Trace {trace_id[:8]}")
 
             success = False
             ai_result = None
 
             try:
-                # Retry 3 lần nếu AI sập
+                # Retry 3
                 for attempt in range(3):
                     try:
                         response = await http_client.post(
@@ -201,10 +191,10 @@ async def process_ai_queue_worker():
                         await asyncio.sleep(1)
 
                 # ==========================================
-                # SAVE DATABASE (Chạy Async To Thread)
+                # SAVE DATABASE 
                 # ==========================================
                 if (success and ai_result and ai_result.get("diagnosis_code", 0) != 0):
-                    print(f"🚨 [AI DETECTED] Trace: {trace_id[:8]} | Code: {ai_result.get('diagnosis_code')}")
+                    print(f" [AI DETECTED] Trace: {trace_id[:8]} | Code: {ai_result.get('diagnosis_code')}")
 
                     class MockRequest:
                         def __init__(self, t_id, s_name, r_text):
@@ -226,28 +216,26 @@ async def process_ai_queue_worker():
                             clean_request,
                             ai_result
                         )
-                        print(f"💾 [DB SAVED] Trace: {trace_id[:8]}")
+                        print(f" [DB SAVED] Trace: {trace_id[:8]}")
                     except Exception as e:
-                        print(f"❌ [DB SAVE ERROR] {e}")
+                        print(f" [DB SAVE ERROR] {e}")
                         db.rollback()
                     finally:
                         db.close()
 
             except Exception as e:
-                print(f"❌ [WORKER ERROR] {e}")
+                print(f" [WORKER ERROR] {e}")
 
             finally:
                 ai_task_queue.task_done()
                 if not success:
-                    print(f"🗑️ [DROP] Trace {trace_id[:8]}")
+                    print(f" [DROP] Trace {trace_id[:8]}")
 
         except Exception as worker_crash:
-            print(f"💥 [WORKER CRASH] {worker_crash}")
+            print(f" [WORKER CRASH] {worker_crash}")
             await asyncio.sleep(1)
 
-# ==========================================
-# 8. MAIN API ENTRYPOINT: Cực nhẹ, Cực nhanh
-# ==========================================
+
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest_log(request: LogIngestRequest):
     try:
@@ -277,12 +265,10 @@ async def ingest_log(request: LogIngestRequest):
         except json.JSONDecodeError:
             pass
 
-        # --- BÓC TÁCH TRACE ID ---
         trace_match = PATTERN_TRACE.search(actual_log_content)
         if trace_match:
             extracted_trace_id = trace_match.group(1)
 
-        # --- LỌC RÁC CHUẨN HÓA LOG ---
         actual_log_content = PATTERN_PREFIX.sub('', actual_log_content)
         actual_log_content = PATTERN_BRACKET.sub('', actual_log_content)
         actual_log_content = PATTERN_TRACE_REMOVE.sub('', actual_log_content)
@@ -292,9 +278,7 @@ async def ingest_log(request: LogIngestRequest):
         if not actual_log_content:
             return IngestResponse(status="ignored", message="Log rỗng", is_anomaly=False)
 
-        # ==========================================
-        # BƠM LOG VÀO BUFFER
-        # ==========================================
+        
         should_flush = False
         batch_logs_to_send = []
 
@@ -311,7 +295,6 @@ async def ingest_log(request: LogIngestRequest):
             logs_count = len(trace_buffers[extracted_trace_id]["logs"])
             time_elapsed = time.time() - trace_buffers[extracted_trace_id]["start_time"]
 
-            # Flush nếu thỏa mãn 1 trong 3 điều kiện
             if logs_count >= 20 or time_elapsed >= 5 or logs_count >= MAX_LOGS_PER_TRACE:
                 should_flush = True
                 batch_logs_to_send = list(trace_buffers[extracted_trace_id]["logs"])
@@ -319,9 +302,7 @@ async def ingest_log(request: LogIngestRequest):
                 trace_buffers[extracted_trace_id]["logs"].clear()
                 trace_buffers[extracted_trace_id]["start_time"] = time.time()
 
-        # ==========================================
-        # ĐẨY DATA VÀO QUEUE ĐỂ AI XỬ LÝ NGẦM
-        # ==========================================
+        
         if should_flush:
             try:
                 if ai_task_queue.full():
@@ -359,5 +340,5 @@ async def ingest_log(request: LogIngestRequest):
         )
 
     except Exception as e:
-        print(f"❌ [ERROR] API Ingest fail: {e}")
+        print(f"[ERROR] API Ingest fail: {e}")
         raise HTTPException(status_code=500, detail=str(e))

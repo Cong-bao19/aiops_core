@@ -11,7 +11,6 @@ class PredictionRepository:
         diag_code = ai_result.get("diagnosis_code", 0)
         diag_name = ai_result.get("diagnosis_name", "Normal")
         
-        # 🌟 Lấy object loại lỗi tập trung từ ErrorTypeRepository
         error_type = self.error_type_repo.get_or_create_error_type(diag_code, diag_name)
 
         new_prediction = AIPrediction(

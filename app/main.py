@@ -13,20 +13,20 @@ async def startup_event():
     asyncio.create_task(pipeline_controller.cleanup_expired_buffers())
     asyncio.create_task(pipeline_controller.auto_flush_buffers())
     
-    # 2. 🌟 FIX 3: SPAWN NHIỀU WORKER SONG SONG
+    # 2. FIX 3: SPAWN NHIỀU WORKER SONG SONG
     NUM_WORKERS = 5  # Tạo 5 công nhân gắp việc từ Queue
     for i in range(NUM_WORKERS):
         asyncio.create_task(pipeline_controller.process_ai_queue_worker())
         
-    print(f"🚀 [STARTUP] Đã kích hoạt {NUM_WORKERS} AI Workers và các luồng dọn dẹp.")
+    print(f"s [STARTUP] Đã kích hoạt {NUM_WORKERS} AI Workers và các luồng dọn dẹp.")
 
 # ==========================================
 # TẮT HỆ THỐNG (SHUTDOWN)
 # ==========================================
 @app.on_event("shutdown")
 async def shutdown_event():
-    # 🌟 FIX 2: Đóng kết nối gọn gàng, chống tràn RAM và treo Socket
-    print("⚠️ [SHUTDOWN] Đang dọn dẹp tài nguyên trước khi tắt server...")
+    #  FIX 2: Đóng kết nối gọn gàng, chống tràn RAM và treo Socket
+    print(" [SHUTDOWN] Đang dọn dẹp tài nguyên trước khi tắt server...")
     await pipeline_controller.close_pipeline_resources()
 origins = [
     "http://localhost:5173",

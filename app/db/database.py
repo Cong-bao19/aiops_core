@@ -8,18 +8,18 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise ValueError("Chưa tìm thấy DATABASE_URL trong file .env!")
+    raise ValueError("Chưa tìm thấy DATABASE_URL trong file .env")
 
-# Khởi tạo Engine
-engine = create_engine(DATABASE_URL, echo=False)
+engine = create_engine(DATABASE_URL,
+    pool_pre_ping=True,  
+    pool_size=20,        
+    max_overflow=10,     
+    pool_timeout=30     )
 
-# Khởi tạo Session
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Class gốc cho Models
 Base = declarative_base()
 
-# Dependency Injection cho FastAPI
 def get_db():
     db = SessionLocal()
     try:

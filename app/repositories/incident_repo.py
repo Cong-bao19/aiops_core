@@ -23,7 +23,6 @@ class IncidentRepository:
             self.db.commit()
             return existing_incident.id
         else:
-            # Tạo lỗi mới
             new_incident = Incident(
                 service_id=service_id,
                 title=title,
