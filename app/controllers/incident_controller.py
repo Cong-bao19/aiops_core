@@ -7,6 +7,8 @@ from app.models.alert_model import Incident, IncidentStatusEnum, AIPrediction, E
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
+from app.models.alert_model import Service
+from app.schemas.alert_schema import ServiceDTO, ErrorTypeDTO
 
 router = APIRouter(prefix="/api/v1/logs", tags=["Incident Dashboard"])
 
@@ -17,7 +19,9 @@ class StatusUpdateRequest(BaseModel):
 class BulkResolveRequest(BaseModel):
     incident_ids: List[int]
 
-#  API: All INCIDENTS
+# ==========================================
+# API: All INCIDENTS
+# ==========================================
 @router.get("/incidents", response_model=list[IncidentDTOResponse])
 async def get_all_incidents(status: str = None, db: Session = Depends(get_db)):
     query = db.query(Incident)
@@ -28,44 +32,53 @@ async def get_all_incidents(status: str = None, db: Session = Depends(get_db)):
     
     result = []
     for inc in incidents:
+        trace_ids = []
+        if inc.recent_trace_ids:
+            if isinstance(inc.recent_trace_ids, str):
+                trace_ids = inc.recent_trace_ids.split(",")
+            elif isinstance(inc.recent_trace_ids, list):
+                trace_ids = [str(t) for t in inc.recent_trace_ids]
+            
         result.append(IncidentDTOResponse(
             id=inc.id,
             title=inc.title,
-            severity=inc.severity.value,
-            status=inc.status.value,
+            severity=inc.severity.value if hasattr(inc.severity, 'value') else inc.severity,
+            status=inc.status.value if hasattr(inc.status, 'value') else inc.status,
             occurrence_count=inc.occurrence_count,
             first_seen=inc.first_seen,
             last_seen=inc.last_seen,
+            service_name= inc.service.name if inc.service else "Unknown",
             error_type=inc.error_type
         ))
     return result
 
-#  API: detail 1 INCIDENT
+# ==========================================
+# API: detail 1 INCIDENT 
+# ==========================================
 @router.get("/incidents/{incident_id}")
-async def get_all_incidents(
-    status: str = None, 
-    skip: int = 0, 
-    limit: int = 100, 
-    db: Session = Depends(get_db)
-):
-    query = db.query(Incident)
-    if status:
-        query = query.filter(Incident.status == IncidentStatusEnum(status))
+async def get_incident_detail(incident_id: int, db: Session = Depends(get_db)):
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
     
-    incident = query.order_by(Incident.last_seen.desc()).offset(skip).limit(limit).all()
     if not incident:
         raise HTTPException(status_code=404, detail="Không tìm thấy Incident này!")
         
-    trace_list = incident.recent_trace_ids.split(",") if incident.recent_trace_ids else []
+    trace_list = []
+    if incident.recent_trace_ids:
+        if isinstance(incident.recent_trace_ids, str):
+            trace_list = incident.recent_trace_ids.split(",")
+        elif isinstance(incident.recent_trace_ids, list):
+            trace_list = [str(t) for t in incident.recent_trace_ids]
+
     return {
         "id": incident.id,
         "title": incident.title,
         "service_id": incident.service_id,
-        "status": incident.status,
+        "status": incident.status.value if hasattr(incident.status, 'value') else incident.status,
         "occurrence_count": incident.occurrence_count,
         "first_seen": incident.first_seen,
         "last_seen": incident.last_seen,
         "recent_traces": trace_list,
+        "service_name": incident.service.name if incident.service else "Unknown",
         "error_type": {
             "id": incident.error_type.id,
             "code": incident.error_type.code,
@@ -74,7 +87,9 @@ async def get_all_incidents(
         } if incident.error_type else None
     }
 
-#  API: detail LOG THEO TRACE ID
+# ==========================================
+# API: detail LOG THEO TRACE ID
+# ==========================================
 @router.get("/traces/{trace_id}")
 async def get_trace_details(trace_id: str, db: Session = Depends(get_db)):
     trace_detail = db.query(AIPrediction).filter(AIPrediction.trace_id == trace_id).first()
@@ -94,7 +109,9 @@ async def get_trace_details(trace_id: str, db: Session = Depends(get_db)):
         } if trace_detail.error_type else None
     }
 
-#update status
+# ==========================================
+# update status
+# ==========================================
 @router.put("/incidents/{incident_id}/status")
 async def update_incident_status(incident_id: int, payload: StatusUpdateRequest, db: Session = Depends(get_db)):
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
@@ -110,7 +127,9 @@ async def update_incident_status(incident_id: int, payload: StatusUpdateRequest,
     db.commit()
     return {"message": f"Sự cố #{incident_id} đã chuyển sang trạng thái {payload.status}"}
 
-#  SUMMARY
+# ==========================================
+# SUMMARY
+# ==========================================
 @router.get("/metrics/summary")
 async def get_aiops_metrics_summary(db: Session = Depends(get_db)):
     total_incidents = db.query(Incident).count()
@@ -142,3 +161,12 @@ async def get_aiops_metrics_summary(db: Session = Depends(get_db)):
         },
         "error_distribution": distribution if distribution else {"Hệ thống sạch (Normal)": 0}
     }
+
+@router.get("/services", response_model=List[ServiceDTO])
+async def get_all_services(db: Session = Depends(get_db)):
+    return db.query(Service).order_by(Service.name.asc()).all()
+
+
+@router.get("/error-types", response_model=List[ErrorTypeDTO])
+async def get_all_error_types(db: Session = Depends(get_db)):
+    return db.query(ErrorType).order_by(ErrorType.code.asc()).all()

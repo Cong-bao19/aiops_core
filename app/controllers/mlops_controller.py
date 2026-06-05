@@ -7,21 +7,17 @@ router = APIRouter(prefix="/api/v1/ai", tags=["MLOps & Model Lifecycle"])
 async def run_pytorch_retrain_pipeline():
     print(f" [{datetime.now().strftime('%H:%M:%S')}] [MLOPS] Bắt đầu luồng huấn luyện LogRobust Model...")
     
-    # 1. Trích xuất dữ liệu mới từ DB (Giả lập delay 3 giây)
     await asyncio.sleep(3)
     print(f" [{datetime.now().strftime('%H:%M:%S')}] [MLOPS] Đã trích xuất 50,000 mẫu log mới (bao gồm các ca Ops đã sửa nhãn).")
     
-    # 2. Chạy Fine-tuning cập nhật trọng số model (Giả lập delay 5 giây)
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [MLOPS] Đang chạy vòng lặp Epochs cập nhật trọng số PyTorch...")
     await asyncio.sleep(5)
     
-    # 3. Lưu model mới
     print(f" [{datetime.now().strftime('%H:%M:%S')}] [MLOPS] Huấn luyện hoàn tất! Đã lưu model mới: 'logrobust_v2.2.pt'.")
 
 
 @router.get("/evaluation")
 async def get_model_evaluation():
-    # Trong thực tế, dữ liệu này đọc từ file config, MLflow hoặc 1 bảng trong DB sau mỗi lần test model
     return {
         "model_name": "LogRobust (Bi-LSTM + Attention)",
         "version": "v2.1.0",
@@ -35,7 +31,6 @@ async def get_model_evaluation():
         }
     }
 
-# 2. API: (RETRAIN)
 @router.post("/retrain")
 async def trigger_model_retrain(background_tasks: BackgroundTasks):
     background_tasks.add_task(run_pytorch_retrain_pipeline)

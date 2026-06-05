@@ -37,89 +37,88 @@ class LogProcessingService:
         return service_id
 
     def _generate_fingerprint(self, raw_text: str) -> str:
-        template = re.sub(r'\d+', '', raw_text)
-        template = re.sub(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', '', template)
-        return hashlib.md5(template.encode('utf-8')).hexdigest()[:8]
+        return hashlib.md5(raw_text.encode()).hexdigest()[:8]
 
-    def process_and_save(self, request, ai_result):
+    def process_and_save(self, payload: dict, ai_result: dict):
+        trace_id = payload["trace_id"]
+        service_name = payload["service_name"]
+        raw_text = payload["raw_text"]
+        context_to_save = payload.get("full_context", raw_text)
+
         diagnosis_code = ai_result.get("diagnosis_code", 0)
-        diagnosis_name = ai_result.get("diagnosis_name", "Unknown Anomaly")
-        
-        if diagnosis_code == 0:
-            return None
+        diagnosis_name = ai_result.get("diagnosis_name", "Normal")
+
+        log_clean = re.sub(r'\d+', '', raw_text)
+        fingerprint = hashlib.md5(log_clean.encode('utf-8')).hexdigest()[:8]
 
         error_type = self.error_type_repo.get_or_create_error_type(diagnosis_code, diagnosis_name)
-
-        fingerprint = self._generate_fingerprint(request.raw_text)
-        cache_key = f"{request.service_name}_{diagnosis_code}_{fingerprint}"
-        
         now = datetime.now()
 
-        if cache_key in LOCAL_ALERT_CACHE:
-            cached_data = LOCAL_ALERT_CACHE[cache_key]
+        existing_prediction = self.db.query(AIPrediction).filter(
+            AIPrediction.trace_id == trace_id,
+            AIPrediction.error_type_id == error_type.id
+        ).first()
+
+        if existing_prediction:
+            existing_prediction.log_count = ai_result.get("current_log_count", 0)
+            existing_prediction.confidence = ai_result.get("confidence_percent", 0.0)
+            existing_prediction.probabilities = ai_result.get("probabilities", {})
+            existing_prediction.raw_log_context = context_to_save
             
-            if now < cached_data["expire_at"]:
-                cached_data["count"] += 1
+            incident = self.db.query(Incident).filter(Incident.id == existing_prediction.incident_id).first()
+            if incident:
+                incident.last_seen = now
                 
-                if request.trace_id not in cached_data["recent_traces"]:
-                    cached_data["recent_traces"].append(request.trace_id)
-                    if len(cached_data["recent_traces"]) > 10:
-                        cached_data["recent_traces"].pop(0)
+            self.db.commit()
+            return existing_prediction.incident_id
 
-                incident = self.db.query(Incident).filter(Incident.id == cached_data["incident_id"]).first()
-                if incident:
-                    incident.occurrence_count = cached_data["count"]
-                    incident.last_seen = now
-                    incident.recent_trace_ids = ",".join(cached_data["recent_traces"])
+        else:
+            
+            safe_service_id = self.get_or_create_service_id(service_name)
+            
+            existing_incident = self.db.query(Incident).filter(
+                Incident.service_id == safe_service_id,
+                Incident.error_type_id == error_type.id,
+                Incident.status == IncidentStatusEnum.OPEN
+            ).first()
+
+            if existing_incident:
+                existing_incident.occurrence_count += 1
+                existing_incident.last_seen = now
                 
-                new_prediction = AIPrediction(
-                    trace_id=request.trace_id,
-                    incident_id=cached_data["incident_id"],
-                    error_type_id=error_type.id,
-                    confidence=ai_result.get("confidence_percent", 0.0),
-                    probabilities=ai_result.get("probabilities", {}),
-                    raw_log_context=request.raw_text,
-                    log_count=ai_result.get("current_log_count", 0)
-                )
-                self.db.add(new_prediction)
-                self.db.commit()
-                    
-                return cached_data["incident_id"]
+                recent_traces_list = existing_incident.recent_trace_ids.split(",") if existing_incident.recent_trace_ids else []
+                if trace_id not in recent_traces_list:
+                    recent_traces_list.append(trace_id)
+                    existing_incident.recent_trace_ids = ",".join(recent_traces_list[-10:])
+                
+                self.db.flush()
+                incident_id_to_use = existing_incident.id
+                
             else:
-                del LOCAL_ALERT_CACHE[cache_key]
+                new_incident = Incident(
+                    service_id=safe_service_id,
+                    error_type_id=error_type.id,
+                    status=IncidentStatusEnum.OPEN,
+                    first_seen=now,
+                    last_seen=now,
+                    occurrence_count=1,
+                    title=f"[{fingerprint}] Detected [{diagnosis_name}] anomaly",
+                    recent_trace_ids=trace_id
+                )
+                self.db.add(new_incident)
+                self.db.flush() 
+                incident_id_to_use = new_incident.id
 
-        safe_service_id = self.get_or_create_service_id(request.service_name)
-
-        new_incident = Incident(
-            service_id=safe_service_id,
-            error_type_id=error_type.id,
-            status=IncidentStatusEnum.OPEN,
-            first_seen=now,
-            last_seen=now,
-            occurrence_count=1,
-            title=f"[{fingerprint}] Phát hiện lỗi [{diagnosis_name}] bất thường", 
-            recent_trace_ids=request.trace_id
-        )
-        self.db.add(new_incident)
-        self.db.flush()
-
-        new_prediction = AIPrediction(
-            trace_id=request.trace_id,
-            incident_id=new_incident.id,
-            error_type_id=error_type.id,
-            confidence=ai_result.get("confidence_percent", 0.0),
-            probabilities=ai_result.get("probabilities", {}),
-            raw_log_context=request.raw_text,
-            log_count=ai_result.get("current_log_count", 0)
-        )
-        self.db.add(new_prediction)
-        self.db.commit()
-        self.db.refresh(new_incident)
-
-        LOCAL_ALERT_CACHE[cache_key] = {
-            "incident_id": new_incident.id,
-            "count": 1,
-            "recent_traces": [request.trace_id],
-            "expire_at": now + timedelta(minutes=15)
-        }
-        return new_incident.id
+            new_prediction = AIPrediction(
+                trace_id=trace_id,
+                incident_id=incident_id_to_use,
+                service_id=safe_service_id,  
+                error_type_id=error_type.id,
+                confidence=ai_result.get("confidence_percent", 0.0),
+                probabilities=ai_result.get("probabilities", {}),
+                raw_log_context=context_to_save,
+                log_count=ai_result.get("current_log_count", 0)
+            )
+            self.db.add(new_prediction)
+            self.db.commit()
+            return incident_id_to_use

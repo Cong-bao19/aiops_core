@@ -28,12 +28,10 @@ async def analyze_log_with_ai(trace_id: str, raw_text: str, timestamp_str: str):
                 return None
             return response.json()
     except Exception as e:
-        print(f"❌ Lỗi kết nối AI Server: {e}")
+        print(f" Lỗi kết nối AI Server: {e}")
         return None
 
-# =====================================================================
-# 2. ENDPOINT TIẾP NHẬN LOG (BỘ LỌC RÁC ĐA TẦNG BULLETPROOF)
-# =====================================================================
+
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest_log(request: LogIngestRequest, db: Session = Depends(get_db)):
     try:
@@ -43,7 +41,6 @@ async def ingest_log(request: LogIngestRequest, db: Session = Depends(get_db)):
         timestamp_str = request.timestamp if request.timestamp else datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         extracted_trace_id = server_name 
         
-        # BƯỚC 1: BÓC TÁCH JSON
         try:
             outer_data = json.loads(raw_log)
             if not request.timestamp and "time" in outer_data: timestamp_str = outer_data["time"]
@@ -58,11 +55,9 @@ async def ingest_log(request: LogIngestRequest, db: Session = Depends(get_db)):
         except json.JSONDecodeError:
             pass
 
-        # BƯỚC 2: MÓC TRACE_ID
         trace_match = re.search(r'TraceID:\s*([a-f0-9]+)', actual_log_content, re.IGNORECASE)
         if trace_match: extracted_trace_id = trace_match.group(1)
 
-        # BƯỚC 3: XÓA RÁC
         actual_log_content = re.sub(r'^\d{2}:\d{2}:\d{2}\.\d{3}\s+(INFO|ERROR|WARN|DEBUG|WARNING|TRACE|FATAL)\s+-\s+', '', actual_log_content)
         actual_log_content = re.sub(r'^\[.*?\]\s+(INFO|ERROR|WARN|DEBUG|WARNING|TRACE|FATAL)\s+', '', actual_log_content)
         actual_log_content = re.sub(r'TraceID:\s*[a-f0-9-]+\s*', '', actual_log_content, flags=re.IGNORECASE)
@@ -73,7 +68,6 @@ async def ingest_log(request: LogIngestRequest, db: Session = Depends(get_db)):
         if not actual_log_content:
             return IngestResponse(status="ignored", message="Log rỗng", is_anomaly=False, incident_id=None)
 
-        # BƯỚC 4: CHUẨN HÓA THỜI GIAN
         try:
             if re.fullmatch(r"\d+", str(timestamp_str)): dt_obj = pd.to_datetime(int(timestamp_str), unit='ns')
             else: dt_obj = pd.to_datetime(timestamp_str)
@@ -81,9 +75,7 @@ async def ingest_log(request: LogIngestRequest, db: Session = Depends(get_db)):
         except Exception:
             normalized_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")
 
-        # -----------------------------------------------------------
-        # BƯỚC 5: GOM LOG VÀO BUFFER (Gom theo TraceID)
-        # -----------------------------------------------------------
+        
         trace_buffers[extracted_trace_id]["logs"].append({
             "raw_text": actual_log_content,
             "timestamp": normalized_timestamp
@@ -92,28 +84,23 @@ async def ingest_log(request: LogIngestRequest, db: Session = Depends(get_db)):
         logs_count = len(trace_buffers[extracted_trace_id]["logs"])
         time_elapsed = time.time() - trace_buffers[extracted_trace_id]["start_time"]
         
-        # Log thông tin gom nhóm
-        print(f"📦 [BUFFER] Trace: {extracted_trace_id[:8]} | Count: {logs_count}/20 | Time: {int(time_elapsed)}s")
+        print(f" [BUFFER] Trace: {extracted_trace_id[:8]} | Count: {logs_count}/20 | Time: {int(time_elapsed)}s")
         
         if logs_count >= 20 or time_elapsed >= 5:
-            print(f"🚀 [FLUSH] Đang gửi batch {logs_count} log của Trace: {extracted_trace_id[:8]} sang AI...")
+            print(f" [FLUSH] Đang gửi batch {logs_count} log của Trace: {extracted_trace_id[:8]} sang AI...")
             
             batch_logs = trace_buffers[extracted_trace_id]["logs"]
             del trace_buffers[extracted_trace_id]
-            last_response = None # <--- KHỞI TẠO Ở ĐÂY ĐỂ ĐẢM BẢO LUÔN TỒN TẠI
+            last_response = None
             log_processor = LogProcessingService(db)
-            # 🌟 THAY VÌ LOOP, GỬI CẢ BATCH QUA AI
             async with httpx.AsyncClient() as client:
-                # Gửi 1 request duy nhất chứa list logs
                 payload = {"trace_id": extracted_trace_id, "logs": batch_logs}
                 response = await client.post("http://localhost:8000/batch_analyze", json=payload, timeout=10.0)
                 ai_result = response.json() if response.status_code == 200 else None
 
-            # Nếu AI trả về kết quả dự đoán (Class != 0) thì lưu DB
             if ai_result:
-                print(f"✅ [AI RESPONSE] Trace: {extracted_trace_id[:8]} | Mã lỗi: {ai_result.get('diagnosis_code')}")
+                print(f" [AI RESPONSE] Trace: {extracted_trace_id[:8]} | Mã lỗi: {ai_result.get('diagnosis_code')}")
                 
-                # Nếu AI dự đoán có lỗi (Class != 0) thì tiến hành lưu DB
                 if ai_result.get("diagnosis_code", 0) != 0:
                     class MockRequest:
                         def __init__(self, t_id, s_name, r_text):
@@ -123,13 +110,12 @@ async def ingest_log(request: LogIngestRequest, db: Session = Depends(get_db)):
                     
                     last_log_in_batch = batch_logs[-1]
                     
-                    # 🌟 ĐÃ SỬA: Đã nhét `server_name` vào giữa để đủ 3 tham số!
                     clean_request = MockRequest(extracted_trace_id, server_name, last_log_in_batch["raw_text"])
                     
                     last_response = log_processor.process_and_save(clean_request, ai_result)
-                    print(f"💾 [DB SAVED] Đã lưu sự cố vào Database cho Trace: {extracted_trace_id[:8]}")
+                    print(f"[DB SAVED] Đã lưu sự cố vào Database cho Trace: {extracted_trace_id[:8]}")
             else:
-                print(f"⚠️ [AI WARNING] Không nhận được phản hồi từ AI cho Trace: {extracted_trace_id[:8]}")
+                print(f" [AI WARNING] Không nhận được phản hồi từ AI cho Trace: {extracted_trace_id[:8]}")
             
             return IngestResponse(
                 status="success", 
@@ -146,16 +132,13 @@ async def ingest_log(request: LogIngestRequest, db: Session = Depends(get_db)):
         )
 
     except Exception as e:
-        print(f"❌ [ERROR] Ingest fail: {e}")
+        print(f"[ERROR] Ingest fail: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-# =====================================================================
-# 3. CÁC API THỐNG KÊ, DANH SÁCH INCIDENT (GIỮ NGUYÊN CODE CŨ CỦA BẠN)
-# =====================================================================
-"""@router.get("/stats", response_model=dict)
+
+@router.get("/stats", response_model=dict)
 async def get_dashboard_stats(db: Session = Depends(get_db)):
     log_processor = LogProcessingService(db)
-    return log_processor.get_stats()"""
-
+    return log_processor.get_stats()
 @router.get("/incidents", response_model=list[IncidentDTOResponse])
 async def get_all_incidents(status: str = None, db: Session = Depends(get_db)):
     query = db.query(Incident)
@@ -175,7 +158,6 @@ async def get_all_incidents(status: str = None, db: Session = Depends(get_db)):
             occurrence_count=inc.occurrence_count,
             first_seen=inc.first_seen,
             last_seen=inc.last_seen,
-            # 🌟 ĐÃ SỬA: Map quan hệ sang ErrorTypeDTO tự động qua Pydantic từ ORM
             error_type=inc.error_type
         ))
     return result
@@ -196,7 +178,6 @@ async def get_incident_detail(incident_id: int, db: Session = Depends(get_db)):
         "first_seen": incident.first_seen,
         "last_seen": incident.last_seen,
         "recent_traces": trace_list,
-        # 🌟 ĐÃ SỬA: Thêm thông tin object ErrorType
         "error_type": {
             "id": incident.error_type.id,
             "code": incident.error_type.code,
@@ -211,14 +192,13 @@ from app.models.alert_model import AIPrediction
 async def get_trace_details(trace_id: str, db: Session = Depends(get_db)):
     trace_detail = db.query(AIPrediction).filter(AIPrediction.trace_id == trace_id).first()
     if not trace_detail:
-        raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu log chi tiết cho trace_id này!")
+        raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu log chi tiết cho trace_id ")
     return {
         "id": trace_detail.id,
         "trace_id": trace_detail.trace_id,
-        "raw_log_context": trace_detail.raw_log_context, # Sửa lại đúng tên trường trong model mới
-        "confidence_percent": trace_detail.confidence,    # Sửa lại đúng tên trường trong model mới
+        "raw_log_context": trace_detail.raw_log_context, 
+        "confidence_percent": trace_detail.confidence,   
         "created_at": trace_detail.created_at,
-        # 🌟 ĐÃ SỬA: Bóc dữ liệu từ bảng ErrorType thay vì trường thô cũ
         "error_type": {
             "id": trace_detail.error_type.id,
             "code": trace_detail.error_type.code,

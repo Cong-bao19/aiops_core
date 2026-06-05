@@ -5,7 +5,7 @@ from datetime import datetime
 
 class LogIngestRequest(BaseModel):
     service_name: str = Field(..., description="Tên microservice (VD: frontend)")
-    raw_text: str = Field(..., min_length=5, description="Nội dung chuỗi log thô")
+    raw_text: str = Field(..., min_length=1, description="Nội dung chuỗi log thô")
     timestamp: Optional[str] = Field(
         default=None,
         description="Timestamp gốc từ client agent"
@@ -32,7 +32,7 @@ class IncidentDTOResponse(BaseModel):
     occurrence_count: int
     first_seen: datetime
     last_seen: datetime
-    
+    service_name: Optional[str] = "Unknown"
     
     error_type: Optional[ErrorTypeDTO] = None
     
@@ -57,3 +57,9 @@ class DashboardStatsResponse(BaseModel):
     total_incidents_today: int
     open_critical_incidents: int
     top_failing_service: Optional[str] = None
+
+class ServiceDTO(BaseModel):
+    id: int
+    name: str
+    
+    model_config = ConfigDict(from_attributes=True)
