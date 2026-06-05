@@ -6,3 +6,5 @@ SQLAlchemy==2.0.20
 psycopg2-binary==2.9.7
 httpx==0.25.0
 python-dotenv==1.0.0
+
+pip install "uvicorn[standard]"
