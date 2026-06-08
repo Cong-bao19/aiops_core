@@ -24,7 +24,7 @@ class ErrorType(Base):
     name = Column(String(100), nullable=False)                      # VD: Normal, Performance...
     description = Column(String(255), nullable=True)                # Gợi ý cách fix
 
-    incidents = relationship("Incident", back_populates="error_type")
+    incidents = relationship("Incident", foreign_keys="[Incident.error_type_id]", back_populates="error_type")
     predictions = relationship("AIPrediction", back_populates="error_type")
 
 
@@ -56,8 +56,12 @@ class Incident(Base):
     first_seen = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    human_error_type_id = Column(Integer, ForeignKey("error_types.id"), nullable=True) 
+    notes = Column(Text, nullable=True)
+
     service = relationship("Service", back_populates="incidents")
-    error_type = relationship("ErrorType", back_populates="incidents")
+    error_type = relationship("ErrorType", foreign_keys=[error_type_id], back_populates="incidents")
+    human_error_type = relationship("ErrorType", foreign_keys=[human_error_type_id])
     predictions = relationship("AIPrediction", back_populates="incident")
 
 

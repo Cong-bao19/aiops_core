@@ -1,6 +1,10 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
+from sqlalchemy.orm import Session
 import asyncio
 from datetime import datetime
+
+from app.db.database import get_db
+from app.services.mlops_service import get_training_data_logic
 
 router = APIRouter(prefix="/api/v1/ai", tags=["MLOps & Model Lifecycle"])
 
@@ -32,10 +36,18 @@ async def get_model_evaluation():
     }
 
 @router.post("/retrain")
-async def trigger_model_retrain(background_tasks: BackgroundTasks):
+async def trigger_model_retrain(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    training_data = get_training_data_logic(db)
+    
+    if not training_data:
+        return {
+            "status": "warning",
+            "message": "Chưa có sự cố nào được kỹ sư xác nhận nhãn (Ground Truth). Hệ thống AI chưa thể tiến hành Retrain!"
+        }
+
     background_tasks.add_task(run_pytorch_retrain_pipeline)
     
     return {
         "status": "success",
-        "message": "Đã đưa tiến trình Retrain vào luồng Background. Hệ thống AI đang được huấn luyện ngầm và sẽ tự động cập nhật khi hoàn tất!"
+        "message": f"Đã đưa tiến trình Retrain vào luồng Background với {len(training_data)} mẫu log chuẩn. Hệ thống AI đang được huấn luyện ngầm và sẽ tự động cập nhật khi hoàn tất!"
     }

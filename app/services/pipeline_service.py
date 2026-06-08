@@ -1,13 +1,11 @@
 import hashlib
 import re
-from datetime import datetime, timedelta
-from fastapi import HTTPException
+from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.models.alert_model import Incident, IncidentStatusEnum, Service, AIPrediction
 from app.repositories.errortype_repo import ErrorTypeRepository
 
-LOCAL_ALERT_CACHE = {}
 LOCAL_SERVICE_CACHE = {}
 
 class LogProcessingService:
@@ -36,9 +34,6 @@ class LogProcessingService:
 
         LOCAL_SERVICE_CACHE[service_name] = service_id
         return service_id
-
-    def _generate_fingerprint(self, raw_text: str) -> str:
-        return hashlib.md5(raw_text.encode()).hexdigest()[:8]
 
     def process_and_save(self, payload: dict, ai_result: dict):
         trace_id = payload["trace_id"]
@@ -74,7 +69,6 @@ class LogProcessingService:
             return existing_prediction.incident_id
 
         else:
-            
             safe_service_id = self.get_or_create_service_id(service_name)
             
             existing_incident = self.db.query(Incident).filter(
@@ -123,20 +117,3 @@ class LogProcessingService:
             self.db.add(new_prediction)
             self.db.commit()
             return incident_id_to_use
-
-def resolve_incident_logic(db: Session, incident_id: int, actual_diagnosis_code: int, notes: str):
-    """
-    Service: Xử lý logic xác nhận sự cố và lưu nhãn chuẩn (Ground Truth).
-    """
-    incident = db.query(Incident).filter(Incident.id == incident_id).first()
-    if not incident:
-        raise HTTPException(status_code=404, detail="Không tìm thấy sự cố")
-
-    incident.status = "RESOLVED"
-    incident.human_diagnosis_code = actual_diagnosis_code
-    incident.notes = notes
-    
-    db.commit()
-    db.refresh(incident)
-    
-    return incident

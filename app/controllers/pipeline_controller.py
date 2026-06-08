@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.orm import Session
 from app.db.database import SessionLocal
-from app.services.log_service import LogProcessingService
+from app.services.pipeline_service import LogProcessingService
 from app.schemas.alert_schema import LogIngestRequest, IngestResponse
 
 import re
@@ -133,7 +133,6 @@ async def auto_flush_buffers():
 
             time_elapsed = now - data["last_updated"]
 
-            
             if time_elapsed < 5 and logs_count < 20:
                 continue
 
@@ -158,9 +157,7 @@ async def auto_flush_buffers():
                         "service_name": service_name,
                         "logs": batch_logs_to_send
                     })
-
                     print(f" [AUTO FLUSH] Trace {tid[:8]} | {len(batch_logs_to_send)} logs")
-
                 except Exception as e:
                     print(f" Lỗi đẩy queue trace {tid[:8]}: {e}")
 
@@ -198,7 +195,6 @@ async def process_ai_queue_worker():
                                 ai_result = response.json()
                                 success = True
                                 break
-
                         except httpx.RequestError:
                             await asyncio.sleep(1)
 
@@ -239,7 +235,7 @@ async def process_ai_queue_worker():
             print(f" [WORKER CRASH] {worker_crash}")
             await asyncio.sleep(1)
 
-## ==========================================
+# ==========================================
 # 8. INGEST API
 # ==========================================
 @router.post("/ingest", response_model=IngestResponse)
@@ -326,7 +322,7 @@ async def ingest_log(request: LogIngestRequest):
                     "service_name": server_name,
                     "logs": batch_logs_to_send
                 })
-                print(f"📥 [QUEUED] {len(batch_logs_to_send)} logs of {extracted_trace_id[:8]}")
+                print(f" [QUEUED] {len(batch_logs_to_send)} logs of {extracted_trace_id[:8]}")
             except asyncio.QueueFull:
                 pass
 

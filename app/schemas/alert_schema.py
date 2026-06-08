@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, computed_field
 from typing import Dict, Optional, List
 from datetime import datetime
 
@@ -35,7 +35,13 @@ class IncidentDTOResponse(BaseModel):
     service_name: Optional[str] = "Unknown"
     
     error_type: Optional[ErrorTypeDTO] = None
-    
+    notes: Optional[str] = None
+    human_error_type: Optional[ErrorTypeDTO] = None
+
+    @computed_field
+    def is_human_verified(self) -> bool:
+        """Tự động trả về True nếu sự cố đã được kỹ sư gán nhãn"""
+        return self.human_error_type is not None
     model_config = ConfigDict(from_attributes=True)
 
 class AIPredictionDetailDTO(BaseModel):
@@ -63,3 +69,7 @@ class ServiceDTO(BaseModel):
     name: str
     
     model_config = ConfigDict(from_attributes=True)
+
+class IncidentResolveRequest(BaseModel):
+    actual_diagnosis_code: int  
+    notes: str = ""            
