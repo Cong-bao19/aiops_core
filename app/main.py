@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.controllers import pipeline_controller, incident_controller
 import asyncio
 import logging
-
+from app.controllers import mlops_controller
 class IgnoreUpgradeWarning(logging.Filter):
     def filter(self, record):
         return "Unsupported upgrade request" not in record.getMessage()
@@ -42,6 +42,7 @@ app.add_middleware(
 )
 app.include_router(pipeline_controller.router)
 app.include_router(incident_controller.router)
+app.include_router(mlops_controller.router)
 @app.get("/")
 def root():
     return {"message": "Hệ thống AIOps Backend đã sẵn sàng"}

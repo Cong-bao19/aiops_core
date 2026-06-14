@@ -68,7 +68,8 @@ trace_buffers = defaultdict(
         "service_name": "unknown",
         "logs": [],
         "start_time": time.time(),
-        "last_updated": time.time()
+        "last_updated": time.time(),
+        "last_log_time_obj": None
     }
 )
 
@@ -204,13 +205,38 @@ async def process_ai_queue_worker():
                     if (success and ai_result and ai_result.get("diagnosis_code", 0) != 0):
                         print(f" [AI DETECTED] Trace: {trace_id[:8]} | Code: {ai_result.get('diagnosis_code')}")
 
+                        contents = []
+                        time_deltas = []
+                        prev_time_obj = None
+                        
+                        for l in logs:
+                            contents.append(l.get('raw_text', ''))
+                            time_str = l.get('timestamp')
+                            
+                            if not time_str:
+                                time_deltas.append(0.0)
+                            else:
+                                try:
+                                    curr_time_obj = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S,%f")
+                                    if prev_time_obj is None:
+                                        time_deltas.append(0.0)
+                                    else:
+                                        delta = (curr_time_obj - prev_time_obj).total_seconds()
+                                        time_deltas.append(delta if delta >= 0 else 0.0)
+                                    prev_time_obj = curr_time_obj
+                                except Exception:
+                                    time_deltas.append(0.0)
+                        # ---------------------------------------------------------
+
                         full_log_context = "\n".join([f"[{l.get('timestamp', 'N/A')}] {l.get('raw_text', '')}" for l in logs])
 
                         log_payload = {
                             "trace_id": trace_id,
                             "service_name": service_name,
                             "raw_text": logs[-1]["raw_text"] if logs else "",
-                            "full_context": full_log_context
+                            "full_context": full_log_context,
+                            "contents": contents,       # Mảng câu log
+                            "time_deltas": time_deltas  # Mảng thời gian trễ
                         }
 
                         db = SessionLocal()
@@ -279,6 +305,7 @@ async def ingest_log(request: LogIngestRequest):
         if not actual_log_content:
             return IngestResponse(status="ignored", message="Log rỗng", is_anomaly=False)
 
+
         try:
             if timestamp_str:
                 if re.fullmatch(r"\d+", str(timestamp_str)): 
@@ -288,8 +315,11 @@ async def ingest_log(request: LogIngestRequest):
                 final_timestamp = dt_obj.strftime("%Y-%m-%d %H:%M:%S,%f")
             else:
                 final_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")
+                
+            curr_time_obj = datetime.strptime(final_timestamp, "%Y-%m-%d %H:%M:%S,%f")
         except Exception:
             final_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")
+            curr_time_obj = datetime.now()
 
         should_flush = False
         batch_logs_to_send = []
@@ -298,9 +328,23 @@ async def ingest_log(request: LogIngestRequest):
         async with lock:
             trace_buffers[extracted_trace_id]["service_name"] = server_name
             
+            # =============================================================
+            # TÍNH TIME DELTA 
+            # =============================================================
+            prev_time_obj = trace_buffers[extracted_trace_id]["last_log_time_obj"]
+            if prev_time_obj is None:
+                time_delta = 0.0
+            else:
+                delta = (curr_time_obj - prev_time_obj).total_seconds()
+                time_delta = delta if delta >= 0 else 0.0
+                
+            trace_buffers[extracted_trace_id]["last_log_time_obj"] = curr_time_obj
+            # =============================================================
+            
             log_item = {
                 "raw_text": actual_log_content,
-                "timestamp": final_timestamp
+                "timestamp": final_timestamp,
+                "time_delta": time_delta 
             }
             
             trace_buffers[extracted_trace_id]["logs"].append(log_item)

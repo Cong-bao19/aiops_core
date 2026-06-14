@@ -6,7 +6,7 @@ from app.schemas.alert_schema import IncidentDTOResponse, ServiceDTO, ErrorTypeD
 from app.models.alert_model import Incident, IncidentStatusEnum, AIPrediction, ErrorType, Service
 from pydantic import BaseModel
 from typing import List, Optional
-
+import json
 from app.services.incident_service import (
     get_all_incidents_logic,
     get_incident_detail_logic,
@@ -47,18 +47,16 @@ async def get_trace_details(trace_id: str, db: Session = Depends(get_db)):
     trace_detail = db.query(AIPrediction).filter(AIPrediction.trace_id == trace_id).first()
     if not trace_detail:
         raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu log chi tiết cho trace_id")
+    try:
+        log_context = json.loads(trace_detail.raw_log_context)
+    except:
+        log_context = {"contents": [], "time_deltas": []}
+
     return {
-        "id": trace_detail.id,
         "trace_id": trace_detail.trace_id,
-        "raw_log_context": trace_detail.raw_log_context,
+        "raw_log_context": log_context, # Trả về object đã parse
         "confidence_percent": trace_detail.confidence,
         "created_at": trace_detail.created_at,
-        "error_type": {
-            "id": trace_detail.error_type.id,
-            "code": trace_detail.error_type.code,
-            "name": trace_detail.error_type.name,
-            "description": trace_detail.error_type.description
-        } if trace_detail.error_type else None
     }
 
 # ==========================================
