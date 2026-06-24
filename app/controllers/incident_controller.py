@@ -43,7 +43,6 @@ async def get_incident_detail(incident_id: int, db: Session = Depends(get_db)):
 # ==========================================
 @router.get("/traces/{trace_id}")
 async def get_trace_details(trace_id: str, db: Session = Depends(get_db)):
-    # Logic cũ của bạn giữ nguyên
     trace_detail = db.query(AIPrediction).filter(AIPrediction.trace_id == trace_id).first()
     if not trace_detail:
         raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu log chi tiết cho trace_id")

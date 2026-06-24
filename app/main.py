@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from app.controllers import log_controller
 from fastapi.middleware.cors import CORSMiddleware
 from app.controllers import pipeline_controller, incident_controller
 import asyncio

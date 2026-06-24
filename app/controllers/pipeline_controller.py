@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.orm import Session
 from app.db.database import SessionLocal
-from app.services.pipeline_service import LogProcessingService
+from app.services.pipeline_service import LogProcessingService, map_ai_code_to_severity
 from app.schemas.alert_schema import LogIngestRequest, IngestResponse
+from app.services.notification_service import NotificationService
 
 import re
 import json
@@ -244,6 +245,15 @@ async def process_ai_queue_worker():
                             log_processor = LogProcessingService(db)
                             await asyncio.to_thread(log_processor.process_and_save, log_payload, ai_result)
                             print(f" [DB SAVED] Đã lưu sự cố vào Database cho Trace: {trace_id[:8]}")
+                            severity_lvl = map_ai_code_to_severity(ai_result.get("diagnosis_code", 0))
+                            asyncio.create_task(
+                                NotificationService.trigger_alerts(
+                                    trace_id=trace_id,
+                                    service_name=service_name,
+                                    severity=severity_lvl,
+                                    ai_prediction=ai_result.get("diagnosis_name", "Unknown Error")
+                                )
+                            )
                         except Exception as e:
                             print(f" [DB SAVE ERROR] {e}")
                             db.rollback()

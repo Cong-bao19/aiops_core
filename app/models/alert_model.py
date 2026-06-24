@@ -20,9 +20,9 @@ class ErrorType(Base):
     __tablename__ = "error_types"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    code = Column(Integer, unique=True, index=True, nullable=False) # VD: 1, 2, 3
-    name = Column(String(100), nullable=False)                      # VD: Normal, Performance...
-    description = Column(String(255), nullable=True)                # Gợi ý cách fix
+    code = Column(Integer, unique=True, index=True, nullable=False)
+    name = Column(String(100), nullable=False)                      
+    description = Column(String(255), nullable=True)                
 
     incidents = relationship("Incident", foreign_keys="[Incident.error_type_id]", back_populates="error_type")
     predictions = relationship("AIPrediction", back_populates="error_type")

@@ -77,15 +77,13 @@ def resolve_incident_logic(db: Session, incident_id: int, actual_diagnosis_code:
     
     if not incident:
         raise HTTPException(status_code=404, detail="Không tìm thấy sự cố")
-
-    # Lấy ID của loại lỗi thực sự dựa trên "Code" được truyền lên
     actual_error_type = db.query(ErrorType).filter(ErrorType.code == actual_diagnosis_code).first()
     
     if not actual_error_type:
         raise HTTPException(status_code=400, detail=f"Không tìm thấy loại lỗi có mã Code là {actual_diagnosis_code}")
 
     incident.status = "RESOLVED"
-    incident.human_error_type_id = actual_error_type.id # Lưu ID thực tế, tránh râu ông nọ cắm cằm bà kia
+    incident.human_error_type_id = actual_error_type.id 
     incident.notes = notes
     
     if not incident.title.startswith("[RESOLVED]"):

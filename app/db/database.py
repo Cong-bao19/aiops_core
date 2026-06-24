@@ -8,7 +8,7 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise ValueError("Chưa tìm thấy DATABASE_URL trong file .env")
+    raise ValueError("Không tìm thấy DATABASE_URL trong file .env")
 
 engine = create_engine(DATABASE_URL,
     pool_pre_ping=True,  

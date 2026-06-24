@@ -40,7 +40,6 @@ class IncidentDTOResponse(BaseModel):
 
     @computed_field
     def is_human_verified(self) -> bool:
-        """Tự động trả về True nếu sự cố đã được kỹ sư gán nhãn"""
         return self.human_error_type is not None
     model_config = ConfigDict(from_attributes=True)
 

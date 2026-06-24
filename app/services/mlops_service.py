@@ -8,8 +8,8 @@ def get_training_data_logic(db: Session, output_csv_path: str):
     print("[MLOPS] Đang phục dựng CSV chuẩn từ DB...")
     
     verified_incidents = db.query(Incident).filter(
-        Incident.human_error_type_id.isnot(None),
-        Incident.status == "RESOLVED" 
+        Incident.human_error_type_id.isnot(None), 
+        Incident.status == "RESOLVED"             
     ).all()
 
     if not verified_incidents:
@@ -33,7 +33,7 @@ def get_training_data_logic(db: Session, output_csv_path: str):
                         t_delta = time_deltas[i] if i < len(time_deltas) else 0.0
                         
                         training_rows.append({
-                            "Timestamp_Sec": 0.0,            # Giữ nguyên như file mẫu
+                            "Timestamp_Sec": 0.0,            
                             "PodName": "unknown-pod",        
                             "TraceID": trace_id,
                             "Content": contents[i],

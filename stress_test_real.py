@@ -53,7 +53,7 @@ async def main():
         async with sem:
             return await fire_request(c, t, r, l)
 
-    print(f"\n BẮT ĐẦU DỘI BOM {len(test_items)} LỖI GIỐNG NHAU VÀO BACKEND")
+    print(f"\n BẮT ĐẦU BẮN  {len(test_items)} LỖI GIỐNG NHAU VÀO BACKEND")
     start_time = time.time()
 
     async with httpx.AsyncClient() as client:
